@@ -1,0 +1,15 @@
+# 依赖
+node_modules/
+
+# 构建中途产物（build-client.mjs 的语法校验目录）
+.build-client-check/
+
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# 日志与临时文件
+*.log
+*.tmp

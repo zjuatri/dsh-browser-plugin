@@ -1,0 +1,17 @@
+# dsh-browser-plugin bundle patch — the patch layer this package exports.
+#
+# Loaded by the web profile through an explicit `file://` row inserted from
+# `$DSH_HOME/profiles/web/cordis.patch.yml`, so this file exists mainly for a
+# normal `dsh plugin add` install. A single bare-name row mounts this plugin on
+# the profile root.
+#
+# This plugin publishes no service: it registers the `browser_*` tools into the
+# host-owned `tools` registry, registers its bundled skills, keeps the browser
+# runtime module-private, and serves the live-view routes on the web server.
+# Like the package it replaces, it therefore needs no `isolate` realm.
+#
+# It SUPERSEDES `@try-works/dsh-browser-agent`: both would launch a second
+# Chrome and both would render a browser surface. Install one or the other.
+- insert:
+    - id: dsh-browser-plugin
+      name: 'dsh-browser-plugin'
