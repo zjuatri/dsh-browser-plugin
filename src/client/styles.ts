@@ -21,6 +21,7 @@ const PLUGIN_TAG = 'dsh-browser-plugin'
 const CSS = `
 .dsh-browser-root{
   display:flex;flex-direction:column;height:100%;min-height:0;flex:1 1 auto;
+  position:relative; /* 右键菜单相对它定位 */
   background:var(--dsw-alias-bg-layer-1,#fff);
   color:var(--dsw-alias-label-primary,#0f1115);
   font-size:var(--dsh-content-font-size-secondary,13px);
@@ -137,7 +138,7 @@ const CSS = `
   color:var(--dsw-alias-state-error-primary,#ec1313);
 }
 .dsh-browser-modes{
-  display:flex;align-items:center;gap:6px;padding:6px 8px;flex:0 0 auto;
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px;padding:6px 8px;flex:0 0 auto;
   border-top:.5px solid var(--dsw-alias-border-l2,#0000001a);
   color:var(--dsw-alias-label-tertiary,#81858c);
   font-size:var(--dsw-font-xxs-12-font-size,12px);
@@ -158,6 +159,28 @@ const CSS = `
 .dsh-browser-segBtn[data-active="true"]{
   background:var(--dsw-static-blue-600,#2563eb);
   color:var(--dsw-alias-label-primary-foreground,#fff);
+}
+
+/*
+ * 画面上的右键菜单：接管了宿主浏览器的默认菜单（否则「检查」打开的是 DSH Web UI 自己的
+ * 开发者工具）。层级压在画面之上，样式与工具栏同一套令牌。
+ */
+.dsh-browser-menu{
+  position:absolute;z-index:20;min-width:200px;padding:4px;
+  border-radius:8px;
+  background:var(--dsw-alias-bg-layer-1,#fff);
+  border:.5px solid var(--dsw-alias-border-l3,#0000001f);
+  box-shadow:0 6px 20px var(--dsw-alias-shadow-l2,#00000026);
+}
+.dsh-browser-menuItem{
+  display:block;padding:6px 10px;border-radius:6px;
+  font:inherit;text-decoration:none;
+  color:var(--dsw-alias-label-primary,#0f1115);
+  cursor:pointer;
+}
+.dsh-browser-menuItem:hover{background:var(--dsw-alias-interactive-bg-hover,#2631480f)}
+.dsh-browser-menuItem[data-disabled="true"]{
+  color:var(--dsw-alias-label-caption,#adb2b8);cursor:not-allowed;background:transparent;
 }
 `
 

@@ -3,6 +3,13 @@ export const MIN_VIEWPORT_WIDTH = 320
 export const MIN_VIEWPORT_HEIGHT = 240
 /** 视图要求的最大视口边长（CSS 像素）：挡住病态尺寸让渲染进程白烧 CPU。 */
 export const MAX_VIEWPORT_SIDE = 4096
+/**
+ * 抓帧的最大设备边长（像素）。
+ *
+ * 倍率是乘在 CSS 尺寸上的，所以 2 倍档会让 4096 的视口变成 8192 的帧。这里给设备侧
+ * 单独设一条上限：超了就降倍率（见 `setViewport`），而不是让一帧大到编不动。
+ */
+export const MAX_DEVICE_SIDE = 4096
 
 /** 把一个视口边长夹到合法范围；非有限值退回下限。 */
 function clampViewport(value: number, min: number, max: number): number {
@@ -27,6 +34,7 @@ function clampViewport(value: number, min: number, max: number): number {
 import type { Page, Target } from 'puppeteer-core'
 import type { JsonValue } from '@deepseek-ai/dsh-tools'
 import type { BrowserMode, GotoResult, HistoryResult, ScreenshotResult, TabInfo } from './browser-types.js'
+import { resolveDevtoolsFrontendUrl } from './devtools.js'
 import { pageLinks, pageToText, readText } from './extract.js'
 import { normalizeUrl } from './url.js'
 import { BrowserRuntime as BrowserRuntimeBase } from './browser-launch.js'
@@ -144,7 +152,35 @@ export class BrowserRuntime extends BrowserRuntimeBase {
   }
 
   /**
-   * 把共享页面的视口设成给定尺寸。
+   * 活动标签页的页面，**不**启动任何东西：没有页面时返回 null。
+   *
+   * 与 `sharedPage()` 的区别正是这一点 —— 有些操作用户只是「看一眼现状」，不该顺手把
+   * 一只 Chrome 拉起来（例如右键要的开发者工具）。
+   */
+  activePage(): Page | null {
+    this.prune()
+    const current = this.pages[this.active]
+    return current === undefined || current.isClosed() ? null : current
+  }
+
+  /**
+   * 「在当前浏览器里打开这一页的开发者工具」所需的地址。
+   *
+   * 视图是另一只 Chrome 的 JPEG 流，右键只能拿到宿主浏览器自己的 DevTools；真正的入口是
+   * 调试端口给出的 DevTools 前端地址（见 `devtools.ts`）。这里只负责把它取出来 ——
+   * 打不打开由调用方决定。
+   *
+   * @returns 可在宿主机浏览器里打开的地址。
+   * @throws 该会话还没有活动页，或调试端口不可达／没给出前端地址时抛出可读错误。
+   */
+  async devtoolsFrontendUrl(): Promise<string> {
+    const page = this.activePage()
+    if (page === null) throw new Error('这个会话的浏览器还没有打开任何页面')
+    return await resolveDevtoolsFrontendUrl(page, this.browser?.wsEndpoint() ?? null)
+  }
+
+  /**
+   * 把共享页面的视口设成给定尺寸，并按给定倍率抓帧。
    *
    * 实时视图在侧边栏里量出自己的可用区域后把尺寸发过来，于是画面与面板同比例：
    * 既不出现上下留白，页面也不会被等比缩小到读不清。面板是窄栏时，站点收到的是
@@ -155,21 +191,36 @@ export class BrowserRuntime extends BrowserRuntimeBase {
    *
    * @param width - 目标视口宽度（CSS 像素）。
    * @param height - 目标视口高度（CSS 像素）。
-   * @returns 实际生效的尺寸。
+   * @param deviceScaleFactor - 抓帧倍率（1 = 每 CSS 像素一个点，2 = 每物理像素一个点）。
+   * @returns 实际生效的尺寸（CSS 像素）。
    */
-  async setViewport(width: number, height: number): Promise<{ width: number; height: number }> {
+  async setViewport(
+    width: number,
+    height: number,
+    deviceScaleFactor = 1,
+  ): Promise<{ width: number; height: number }> {
     const size = {
       width: clampViewport(width, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_SIDE),
       height: clampViewport(height, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_SIDE),
     }
-    this.viewportOverride = size
+    // 倍率只取整数档，并且要保证设备边长不失控：2 倍叠在 4096 的 CSS 上限上会得到
+    // 8192 的帧，那种帧既编不动也没人看得清 —— 宁可退回 1 倍。取整而不是取小数，是
+    // 因为非整数倍会让源像素落不到整数栅格上，笔画粗细不匀，比干净的 2 倍更难看。
+    const widest = Math.max(size.width, size.height)
+    const scale = Math.max(1, Math.min(Math.round(deviceScaleFactor), Math.floor(MAX_DEVICE_SIDE / widest)))
+    this.viewportOverride = { ...size, deviceScaleFactor: scale }
     const page = await this.ensurePage()
-    await page.setViewport(size)
+    await page.setViewport({ ...size, deviceScaleFactor: scale })
     return size
   }
 
-  /** 视图上次要求的视口尺寸；没有视图接管时为空。 */
-  viewportSize(): { width: number; height: number } | null {
+  /**
+   * 视图上次要求的视口尺寸与抓帧倍率；没有视图接管时为空。
+   *
+   * 倍率也一并给出，因为「尺寸没变」并不等于「不用重新应用」：画质档换了而面板大小没变
+   * 时，视口要按新倍率重设一次，调用方得能看出这一点。
+   */
+  viewportSize(): { width: number; height: number; deviceScaleFactor: number } | null {
     return this.viewportOverride
   }
 

@@ -8,6 +8,7 @@
  */
 
 import z from '@deepseek-ai/schemastery'
+import type { BrowserQuality } from './browser-types.js'
 
 /** 默认 Chrome/Chromium 可执行文件（Windows；可通过配置覆盖）。 */
 export const DEFAULT_CHROME_PATH = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
@@ -35,6 +36,14 @@ export const DEFAULT_ALLOW_SUBAGENTS = false
 
 /** 视图路由等待串行队列的默认上限（毫秒）。 */
 export const DEFAULT_QUEUE_TIMEOUT_MS = 30_000
+
+/**
+ * 实时视图的默认画质档。
+ *
+ * 默认 `perf`（每个 CSS 像素抓一个点）＝ 本插件一贯的观感，不改变任何人现有的体验；
+ * 想要「和周围界面一样锐」的人自己在侧边栏上切到高清，选择会被记住。
+ */
+export const DEFAULT_PANE_QUALITY: BrowserQuality = 'perf'
 
 /** 默认用户数据目录：留空 = 用默认位置（见 `userDataDir` 的说明）。 */
 export const DEFAULT_USER_DATA_DIR = ''
@@ -84,6 +93,20 @@ export interface Config {
    * SSE 画面流 + 合成鼠标/键盘输入 + 地址栏）。默认 true；设为 false 可关闭。
    */
   pane?: boolean
+  /**
+   * 实时视图的**初始**画质档（`perf` 默认 / `hd`）。
+   *
+   * - `perf` —— 每个 CSS 像素抓一个点。帧最小、编码最快；代价是在 2× 屏上那块画面是
+   *   插值放大出来的，比周围的原生文字糊。
+   * - `hd` —— 每个物理像素抓一个点（2 倍抓帧）。2× 屏上像素级清晰，1× 屏上是超采样；
+   *   代价是每帧 4 倍像素。
+   *
+   * 这里只决定**新视图第一次打开时**停在哪个档：侧边栏底部的「性能｜高清」开关一按就
+   * 改宿主当前进程的档位，并写进浏览器本地的 `localStorage`，所以刷新页面、新开窗口、
+   * 新开会话、乃至重启 `dsh web` 之后都还是你上次选的那档。配置项是给「不打算用手点」
+   * 的部署用的。
+   */
+  paneQuality?: BrowserQuality
   /**
    * Chrome 用户数据目录。
    *
@@ -151,6 +174,7 @@ export const Config: z<Config> = z.object({
   timeoutMs: z.number().default(DEFAULT_TOOL_TIMEOUT_MS),
   headed: z.boolean().default(DEFAULT_HEADED),
   pane: z.boolean().default(DEFAULT_PANE),
+  paneQuality: z.union([z.const('perf'), z.const('hd')]).default(DEFAULT_PANE_QUALITY),
   userDataDir: z.string().default(DEFAULT_USER_DATA_DIR),
   isolation: z.union([z.const('session'), z.const('shared')]).default(DEFAULT_ISOLATION),
   maxBrowsers: z.number().default(DEFAULT_MAX_BROWSERS),

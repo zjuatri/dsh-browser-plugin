@@ -39,8 +39,17 @@ export const zh = {
   'mode.stealth.title': '使用插件启动的独立 Chrome 窗口（持久 profile，更不容易被识别为自动化）',
   'mode.switching': '正在切换浏览器…',
 
+  'quality.legend': '画面画质',
+  'quality.perf': '性能',
+  'quality.hd': '高清',
+  'quality.perf.title': '每个 CSS 像素抓一个点：最省，帧小、跟得上；代价是在缩放过的屏幕上画面比周围文字糊',
+  'quality.hd.title': '每个物理像素抓一个点（2 倍抓帧）：和周围界面一样锐；代价是每帧 4 倍像素',
+
   'state.busy': '智能体正在使用本对话的浏览器，正在排队…',
   'view.live': '实时画面',
+
+  'menu.devtools': '打开该页面的开发者工具',
+  'menu.devtoolsDisabled': '本对话的浏览器还没启动',
 } as const
 
 /** 英文文案。 */
@@ -71,8 +80,17 @@ export const en: Record<keyof typeof zh, string> = {
   'mode.stealth.title': 'Use a separate Chrome window launched by the plugin (persistent profile, less detectable as automation)',
   'mode.switching': 'Switching browser…',
 
+  'quality.legend': 'Picture quality',
+  'quality.perf': 'Performance',
+  'quality.hd': 'HD',
+  'quality.perf.title': 'One point per CSS pixel: cheapest, small frames; soft on a scaled display',
+  'quality.hd.title': 'One point per physical pixel (2× capture): as crisp as the surrounding UI, at 4× the pixels per frame',
+
   'state.busy': 'The agent is using this conversation\'s browser — queued…',
   'view.live': 'Live view',
+
+  'menu.devtools': 'Open DevTools for this page',
+  'menu.devtoolsDisabled': 'This conversation\'s browser is not running yet',
 }
 
 /** 把 `{name}` 占位符替换成实际值。 */

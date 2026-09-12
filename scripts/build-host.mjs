@@ -259,6 +259,8 @@ const ENTRY_EXPORTS = [
   // 测试用的运行时构件（见 src/index.ts 的说明）。
   'BrowserQueue', 'QueueAbortError', 'PaneStream', 'gateTool', 'ownershipFrom', 'SUBAGENT_DENIED',
   'BrowserSessions', 'BrowserRuntime',
+  // 「右键 → 该页面的开发者工具」的地址解析与它需要的 origin 白名单。
+  'resolveDevtoolsFrontendUrl', 'DEVTOOLS_ALLOWED_ORIGIN',
 ]
 
 /** 闸门入口（`lib/gate.js`）对外暴露的名字：契约 + 测试接缝。 */
@@ -300,7 +302,12 @@ function emit(modules, entryExports = ENTRY_EXPORTS) {
         .join(', ')
       lines.push(`  const { ${bindings} } = ${source}`)
     }
-    lines.push(row.body.trimEnd().split('\n').map(line => (line === '' ? '' : `  ${line}`)).join('\n'))
+    // Node 的 stripTypeScriptTypes 会以空格替代被删掉的类型；逐行去尾空格，
+    // 否则这些占位会原样进入提交的构建产物并让 git diff --check 失败。
+    lines.push(row.body.trimEnd().split('\n').map(line => {
+      const content = line.trimEnd()
+      return content === '' ? '' : `  ${content}`
+    }).join('\n'))
     lines.push('  return {')
     // 命名空间带上再导出的名字：它们虽然不在这里声明，却是模块的导出面
     // （`export { Config }` 之后 index.ts 的 Config 就是这个绑定）。

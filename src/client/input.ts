@@ -44,13 +44,22 @@ export function shouldPreventKeyDefault(text: string | undefined, key: string): 
 }
 
 /**
- * 把视口内的指针坐标换算成画面帧的设备坐标。
+ * 把视口内的指针坐标换算成 CDP 期望的页面坐标。
+ *
+ * 两件事必须同时做对：
+ *
+ * 1. 分母是帧的 **CSS** 视口尺寸，不是帧的设备像素数 —— CDP 的
+ *    `Input.dispatchMouseEvent` 收的是页面 CSS 像素，而高清档下帧宽是 CSS 宽的两倍。
+ * 2. 换算要按 `object-fit: contain` **实际画出来的那一块**。比例不一致时画面只占元素框
+ *    中间的一块（四周是留白），拿整个框当分母的话，点在留白上也会被算成一个页面坐标 ——
+ *    面板比视口下限还矮时（画面缩成一个小方块），点哪儿都落不到对的地方。留白里的点击
+ *    不属于页面，这里直接返回 null（调用方会丢弃）。
  *
  * @param rect - `<img>` 的包围盒。
- * @param frame - 当前帧（其 width/height 是设备坐标）。
+ * @param frame - 当前帧（`width`/`height` 是设备像素，`cssWidth`/`cssHeight` 是页面 CSS 视口）。
  * @param clientX - 指针的视口 X 坐标。
  * @param clientY - 指针的视口 Y 坐标。
- * @returns 设备坐标；包围盒退化时返回 null。
+ * @returns 页面 CSS 坐标；落在画面之外或包围盒退化时返回 null。
  */
 export function toDevice(
   rect: { left: number; top: number; width: number; height: number },
@@ -59,9 +68,25 @@ export function toDevice(
   clientY: number,
 ): { x: number; y: number } | null {
   if (rect.width <= 0 || rect.height <= 0) return null
+  // 旧宿主（客户端已刷新、宿主还没重启）不发 cssWidth：那时倍率必然是 1，两者相等。
+  const width = frame.cssWidth > 0 ? frame.cssWidth : frame.width
+  const height = frame.cssHeight > 0 ? frame.cssHeight : frame.height
+  if (!(width > 0) || !(height > 0)) return null
+  // contain：取较小的那个比例，画面在框内居中。
+  const fit = Math.min(rect.width / width, rect.height / height)
+  const paintedWidth = width * fit
+  const paintedHeight = height * fit
+  const left = rect.left + (rect.width - paintedWidth) / 2
+  const top = rect.top + (rect.height - paintedHeight) / 2
+  // 半个像素的容差：正好点在画面边缘时别因为浮点误差被丢掉。
+  const slack = 0.5
+  if (
+    clientX < left - slack || clientX > left + paintedWidth + slack
+    || clientY < top - slack || clientY > top + paintedHeight + slack
+  ) return null
   return {
-    x: (clientX - rect.left) / rect.width * frame.width,
-    y: (clientY - rect.top) / rect.height * frame.height,
+    x: (clientX - left) / paintedWidth * width,
+    y: (clientY - top) / paintedHeight * height,
   }
 }
 

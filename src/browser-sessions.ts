@@ -95,6 +95,21 @@ export class BrowserSessions implements BrowserGateway {
   }
 
   /**
+   * 每个已经挂上视图的会话的流控制器。
+   *
+   * 画质这类**全局偏好**（看的人的偏好，不是某只浏览器的属性）改了以后，要把每一扇
+   * 已经打开的窗都按新档位重新起一次画面流，所以需要能遍历它们。只读，不建条目、
+   * 不碰 `lastUsed`。
+   */
+  streams(): PaneStream[] {
+    const list: PaneStream[] = []
+    for (const entry of this.entries.values()) {
+      if (entry.stream !== undefined) list.push(entry.stream)
+    }
+    return list
+  }
+
+  /**
    * 取一个会话的浏览器，没有就地建一个（**只建对象，不启动 Chrome** —— Chrome 在第一次
    * 真正用它时懒启动）。
    *

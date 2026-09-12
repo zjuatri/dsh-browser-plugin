@@ -21,6 +21,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { IncomingMessage } from 'node:http'
+import type { BrowserQuality } from './browser-types.js'
 import type { ResolvedConfig } from './config.js'
 import type { BrowserSessions, SessionBrowser } from './browser-sessions.js'
 import { QueueAbortError } from './browser-queue.js'
@@ -29,6 +30,7 @@ import {
   PaneGotoSchema,
   PaneInputSchema,
   PaneModeSchema,
+  PaneQualitySchema,
   PaneTabIndexSchema,
   PaneTabOpenSchema,
   PaneViewportSchema,
@@ -62,6 +64,17 @@ export function registerBrowserPane(
   const webServer = ctx.get('webServer')
   if (!webServer) return undefined
 
+  /**
+   * 当前画质档。
+   *
+   * **不是**每会话状态：档位表达的是「看的人」想要流畅还是清晰，跟哪只浏览器无关。
+   * 所以某一扇窗按了开关，所有已开的窗一起跟着变（`sessions.streams()` 挨个推），
+   * 而新开的会话在建流时直接拿当前值（见 `browserOf`）。跨进程重启的持久化不在这里
+   * —— 那份记忆在浏览器本地的 `localStorage` 里（见客户端 `quality.ts`），视图接入
+   * 时会把记住的档位重新发过来。
+   */
+  let quality: BrowserQuality = config.paneQuality
+
   /** 这个请求属于哪个会话；没带就是无名会话（无视图的组合）。 */
   const sessionOf = (req: IncomingMessage): string | null => {
     const raw = new URL(req.url ?? '/', 'http://127.0.0.1').searchParams.get(SESSION_PARAM)
@@ -76,7 +89,7 @@ export function registerBrowserPane(
    */
   const browserOf = (req: IncomingMessage): SessionBrowser => {
     const entry = sessions.forSession(sessionOf(req))
-    entry.stream ??= new PaneStream(entry.runtime, entry.queue)
+    entry.stream ??= new PaneStream(entry.runtime, entry.queue, quality)
     return entry
   }
 
@@ -221,9 +234,50 @@ export function registerBrowserPane(
     },
   })
 
+  // 视图切换画质档。和 `/viewport` 一样**不**在 HTTP 边界排队：它本身不驱动浏览器，
+  // 真正的变更（`setViewport` + 重启画面流）由每个会话自己的流控制器走各自的队列。
+  // 档位是全局的，所以这里要挨个通知每一扇已经打开的窗。
+  const disposeQuality = webServer.register({
+    kind: 'exact',
+    path: `${PANE_BASE}/quality`,
+    handler: async (req, res) => {
+      await handleJsonRoute(res, async () => {
+        const raw = await readBody(req)
+        const request = PaneQualitySchema(JSON.parse(raw))
+        quality = request.quality
+        for (const stream of sessions.streams()) stream.setQuality(quality)
+        return { ok: true }
+      })
+    },
+  })
+
   const disposeBack = action('/back', async (entry) => ({ ok: true, result: await entry.runtime.back() }))
   const disposeForward = action('/forward', async (entry) => ({ ok: true, result: await entry.runtime.forward() }))
   const disposeReload = action('/reload', async (entry) => ({ ok: true, result: await entry.runtime.reload() }))
+
+  // 该页面的开发者工具：视图上的右键菜单直接以**链接**指向这里，因此这条路由要让浏览器
+  // 自己跟下去 —— 成功就 302 到 Chrome 给出的 DevTools 前端地址，失败则回一小段 HTML 说明
+  // 原因（回 JSON 会在新标签页里显示一坨原始文本，很难看）。
+  //
+  // 也**不**经过串行队列：它不改变页面，只是为了取一个地址；排在智能体那 30 秒的锁后面
+  // 会让用户以为菜单坏了。同理不懒启动浏览器 —— 没页面就直接说清楚。
+  const disposeDevtools = webServer.register({
+    kind: 'exact',
+    path: `${PANE_BASE}/devtools`,
+    handler: async (req, res) => {
+      try {
+        const url = await browserOf(req).runtime.devtoolsFrontendUrl()
+        if (res.writableEnded) return
+        res.writeHead(302, { location: url, 'cache-control': 'no-store' })
+        res.end()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (res.writableEnded) return
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' })
+        res.end(errorPage(message))
+      }
+    },
+  })
 
   return () => {
     disposeStream()
@@ -234,8 +288,28 @@ export function registerBrowserPane(
     disposeTabClose()
     disposeMode()
     disposeViewport()
+    disposeQuality()
+    disposeDevtools()
     disposeBack()
     disposeForward()
     disposeReload()
   }
+}
+
+/** 开不了开发者工具时给用户看的一小段页面。 */
+function errorPage(message: string): string {
+  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">'
+    + '<title>打开开发者工具失败</title></head>'
+    + '<body style="font:14px/1.6 system-ui;padding:24px;max-width:40em">'
+    + '<h1 style="font-size:16px;margin:0 0 8px">打不开该页面的开发者工具</h1>'
+    + `<p style="margin:0;color:#61666b">${escapeHtml(message)}</p>`
+    + '<p style="margin:16px 0 0"><a href="javascript:window.close()">关闭这个标签页</a></p>'
+    + '</body></html>'
+}
+
+/** 把消息塞进 HTML 前先转义，免得页面内容把标记搞乱。 */
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/gu, char => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
+  )[char] ?? char)
 }

@@ -1,6 +1,6 @@
 {
   "name": "dsh-browser-plugin",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "description": "DSH 浏览器插件：右侧边栏里的浏览器标签页，每个会话一只 Chrome、各自一份独立 profile。",
   "type": "module",

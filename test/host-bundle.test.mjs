@@ -49,6 +49,31 @@ assert.ok(bundle.includes('${PANE_BASE}/stream'), '宿主产物缺少画面流�
 // /viewport 刻意**不**在 HTTP 边界排队：它只登记目标尺寸，真正的变更在防抖之后由
 // 流控制器入队。因此它直接 webServer.register，而不是 post()。
 assert.ok(bundle.includes('${PANE_BASE}/viewport'), '宿主产物缺少视口路由')
+// /quality 同理不排队：它本身不驱动浏览器，真正的变更（改倍率 + 重启画面流）由每个会话
+// 自己的流控制器入队。档位是全局偏好，因此这条路由还要能遍历所有已挂视图的会话。
+assert.ok(bundle.includes('${PANE_BASE}/quality'), '宿主产物缺少画质路由')
+assert.ok(bundle.includes('setQuality'), '画质路由必须把新档位推给已有的视图')
+// 「右键 → 该页面的开发者工具」：视图上的菜单项是个链接，因此这条路由必须让浏览器自己跟
+// 下去（302 到 Chrome 给出的 DevTools 前端地址）；回 JSON 会在新标签页里显示一坨原始文本。
+assert.ok(bundle.includes('${PANE_BASE}/devtools'), '宿主产物缺少开发者工具路由')
+assert.ok(bundle.includes('302'), '开发者工具路由必须用 302 把浏览器带到前端地址')
+
+// ── 调试端口：两条启动路径都必须放行 DevTools 前端的 origin ─────────────────
+// 实测：不带 --remote-allow-origins 时，带 Origin 的 WebSocket 升级会被 Chrome 403，
+// 于是那个新标签页里的 DevTools 永远连不上。启动参数只写一处常量、两处引用。
+{
+  assert.ok(
+    bundle.includes('`--remote-allow-origins=${DEVTOOLS_ALLOWED_ORIGIN}`'),
+    '放行的 origin 必须由常量拼出（而不是写死或通配）',
+  )
+  const uses = [...bundle.matchAll(/DEVTOOLS_ORIGIN_ARG/gu)].length
+  assert.ok(uses >= 3, `两条启动路径都要用上该参数（1 处定义 + 2 处使用），实际 ${String(uses)} 处`)
+  assert.equal(
+    load.DEVTOOLS_ALLOWED_ORIGIN,
+    'https://chrome-devtools-frontend.appspot.com',
+    '白名单就是 Chrome 自己给出的 DevTools 前端 origin',
+  )
+}
 
 // ── 按会话分发：工具与视图都必须落到会话自己的浏览器上 ──────────────────────
 

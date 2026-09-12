@@ -10,13 +10,16 @@
 import {
   createElement as h,
   useCallback,
+  useEffect,
   useRef,
+  useState,
   type FormEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type WheelEvent as ReactWheelEvent,
 } from 'react'
+import { ContextMenu } from './context-menu.js'
 import { keyDownText, modBits, mouseButton, mouseMessage, shouldPreventKeyDefault, toDevice } from './input.js'
 import { ArrowLeftGlyph, ArrowRightGlyph, ReloadGlyph } from './icons.js'
 import { fill, type Translate } from './text.js'
@@ -50,12 +53,19 @@ export interface BrowserLiveProps {
 /** 画面上仍被按住的键（code -> key），离开焦点时释放。 */
 type HeldKeys = Map<string, string>
 
+/** 右键菜单的近似尺寸（像素）：只用来把菜单夹在面板内，不必精确。 */
+const MENU_WIDTH = 208
+const MENU_HEIGHT = 36
+
 /** 活动画面的两向遥控视图。 */
 export function BrowserLive(props: BrowserLiveProps): ReactNode {
   const { t, frame, state, sessionId, toolbar, onOpen, viewRef } = props
   const imgRef = useRef<HTMLImageElement | null>(null)
   const heldRef = useRef<HeldKeys>(new Map())
   const addrFocusRef = useRef(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  /** 右键菜单位置（相对面板可用区域左上角）；null = 没开。 */
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
 
   /** 把指针事件换算到设备坐标后发往宿主。 */
   const send = useCallback((event: { clientX: number; clientY: number }, build: (
@@ -148,9 +158,39 @@ export function BrowserLive(props: BrowserLiveProps): ReactNode {
     onOpen(url)
   }
 
+  /**
+   * 画面上的右键：接管菜单。
+   *
+   * 必须 `preventDefault()`：不拦的话弹出的是**宿主浏览器**的菜单，里面的「检查」打开的是
+   * DSH Web UI 自己的开发者工具 —— 而用户想看的是画面里那一页的。右键本身仍照旧作为合成
+   * 输入送进页面（上面的 mousedown/up 没动），页面自己的 JS 右键行为不受影响。
+   */
+  const onContextMenu = (event: ReactMouseEvent<HTMLImageElement>): void => {
+    event.preventDefault()
+    const box = rootRef.current?.getBoundingClientRect()
+    if (box === undefined) return
+    // 菜单挂在根节点上，因此坐标相对它；再夹一下，免得贴着面板边缘时溢出。
+    setMenu({
+      x: Math.max(4, Math.min(event.clientX - box.left, box.width - MENU_WIDTH - 4)),
+      y: Math.max(4, Math.min(event.clientY - box.top, box.height - MENU_HEIGHT - 4)),
+    })
+  }
+
+  // 菜单打开时：点别处或按 Esc 关掉。监听挂在 document 上，因此点面板外面也有效。
+  useEffect(() => {
+    if (menu === null) return
+    const close = (): void => { setMenu(null) }
+    const onKey = (event: KeyboardEvent): void => { if (event.key === 'Escape') close() }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
+
   const live = state.active && frame !== null
   const driver = state.driver
-
   const view = live
     ? h('img', {
       ref: imgRef,
@@ -166,11 +206,12 @@ export function BrowserLive(props: BrowserLiveProps): ReactNode {
       onKeyDown,
       onKeyUp,
       onBlur,
+      onContextMenu,
     })
     : h('div', { className: 'dsh-browser-note', 'data-tone': state.error ? 'error' : undefined },
       state.error ? fill(t('state.error'), { message: state.error }) : t('state.idleHint'))
 
-  return h('div', { className: 'dsh-browser-root' },
+  return h('div', { className: 'dsh-browser-root', ref: rootRef },
     h('div', { className: 'dsh-browser-bar' },
       h('button', {
         type: 'button',
@@ -216,5 +257,15 @@ export function BrowserLive(props: BrowserLiveProps): ReactNode {
       // 地址取自 `state`，而不是 `frame`：帧只在画面变化时来，地址却可能先变
       // （同文档跳转、只改 history 的导航），用帧上的地址会让状态行落后一页。
       state.url !== '' ? h('span', { className: 'dsh-browser-url', title: state.url }, state.url) : null),
-    h('div', { className: 'dsh-browser-view', ref: viewRef }, view))
+    h('div', { className: 'dsh-browser-view', ref: viewRef }, view),
+    menu === null
+      ? null
+      : h(ContextMenu, {
+        t,
+        x: menu.x,
+        y: menu.y,
+        active: state.active,
+        sessionId,
+        onClose: () => { setMenu(null) },
+      }))
 }

@@ -32,6 +32,7 @@ import { BrowserRuntime } from './browser.js'
 import { PaneStream } from './pane-stream.js'
 import { registerBrowserPane } from './pane.js'
 import { BrowserQueue, QueueAbortError } from './browser-queue.js'
+import { DEVTOOLS_ALLOWED_ORIGIN, resolveDevtoolsFrontendUrl } from './devtools.js'
 import { ownershipFrom, gateTool, SUBAGENT_DENIED } from './tool-session.js'
 
 // 重新导出 schemastery 的 `Config`：cordis 的插件加载器要用它校验原始 profile
@@ -39,18 +40,20 @@ import { ownershipFrom, gateTool, SUBAGENT_DENIED } from './tool-session.js'
 //
 // `BrowserQueue`/`PaneStream`/`BrowserSessions`/`BrowserRuntime` 也一并导出：不是给加载器
 // 用的，而是给测试用的 —— 「同一会话内只有一个调用在驱动浏览器」「按会话隔离」「切换模式
-// 会把当前地址带过去」这些保证都住在它们里面，而测试应该跑在**构建产物**上（源码里的
-// `./x.js` 说明符在 Node 下解析不到同名的 `.ts`）。它们在这里是值绑定，因此 `moduleFaces`
-// 能把它们转发出去。
+// 会把当前地址带过去」「右键能拿到该页面的开发者工具地址」这些保证都住在它们里面，而测试
+// 应该跑在**构建产物**上（源码里的 `./x.js` 说明符在 Node 下解析不到同名的 `.ts`）。它们
+// 在这里是值绑定，因此 `moduleFaces` 能把它们转发出去。
 export {
   Config,
   BrowserQueue,
   BrowserRuntime,
   BrowserSessions,
+  DEVTOOLS_ALLOWED_ORIGIN,
   QueueAbortError,
   PaneStream,
   gateTool,
   ownershipFrom,
+  resolveDevtoolsFrontendUrl,
   SUBAGENT_DENIED,
 }
 export type { Config as BrowserPluginConfig, ResolvedConfig, Viewport } from './config.js'

@@ -75,6 +75,16 @@ assert.ok(
   '正文组件必须从框架注入的 props 里取 sessionId 并往下传',
 )
 
+// ── 右键菜单：接管画面上的右键，指向宿主的开发者工具路由 ────────────────────
+// 不接管的话，右键弹出的是宿主浏览器自己的菜单，「检查」打开的是 DSH Web UI 的开发者工具。
+assert.ok(bundle.includes('onContextMenu'), '画面必须接管右键（否则只有宿主自己的菜单）')
+assert.ok(bundle.includes('preventDefault'), '必须抑制宿主浏览器的默认菜单')
+assert.ok(bundle.includes('dsh-browser-menu'), '必须有菜单样式钩子')
+assert.ok(
+  bundle.includes('paneRoute(\'/devtools\', sessionId)'),
+  '菜单项必须是带会话参数的链接（走链接而不是异步 window.open，才不会被弹窗拦截）',
+)
+
 // ── 语法可解析 ──────────────────────────────────────────────────────────────
 const check = spawnSync(process.execPath, ['--check', bundlePath], { encoding: 'utf8' })
 assert.equal(check.status, 0, `产物语法错误：\n${check.stderr}`)

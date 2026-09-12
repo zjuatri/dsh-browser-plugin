@@ -10,7 +10,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import z from '@deepseek-ai/schemastery'
-import type { GotoResult, TabInfo } from './browser-types.js'
+import type { BrowserQuality, GotoResult, TabInfo } from './browser-types.js'
 
 /** 面板输入路由允许的最大 POST body 大小（字节）。 */
 export const MAX_BODY_BYTES = 64 * 1024
@@ -19,10 +19,19 @@ export const MAX_BODY_BYTES = 64 * 1024
 export interface PaneFrame {
   /** base64 编码的 JPEG 帧（不含 data-URL 前缀；由视图补上）。 */
   data: string
-  /** 帧的像素宽度（设备坐标）。 */
+  /** 帧的像素宽度（**设备**像素 = CSS 视口宽 × 抓帧倍率）。 */
   width: number
-  /** 帧的像素高度（设备坐标）。 */
+  /** 帧的像素高度（**设备**像素）。 */
   height: number
+  /**
+   * 这一帧对应的**页面 CSS 视口**尺寸。
+   *
+   * 视图必须用它对指针坐标做换算，而不是用 `width`/`height`：CDP 的
+   * `Input.dispatchMouseEvent` 收的是 CSS 像素，而高清档下帧宽是 CSS 宽的两倍。低画质
+   * 档两者恰好相等，所以这个字段是让「倍率可以不为 1」这件事成立的前提。
+   */
+  cssWidth: number
+  cssHeight: number
   /** 采集时的页面 URL。 */
   url: string
 }
@@ -36,6 +45,8 @@ export interface PaneState {
   mode: 'own' | 'stealth'
   /** 最近取得锁的会话 id；跨会话争用时视图据此显示「谁在驱动浏览器」。 */
   driver?: string
+  /** 当前画质档：全局偏好，视图上的开关一按就变，所有已开的窗一起跟着变。 */
+  quality: BrowserQuality
 }
 
 /** 视图客户端发来的一条输入事件（JSON 安全的线上形状）。 */
@@ -117,6 +128,23 @@ export const PaneViewportSchema = z.object({
   width: z.number(),
   height: z.number(),
 })
+
+/**
+ * 画质档切换路由的边界 schema。
+ *
+ * 与模式不同，这条路由**不是**每会话的：画质是看的人的偏好，改一次所有已开的窗一起变。
+ */
+export const PaneQualitySchema = z.object({
+  quality: z.union([z.const('perf' as const), z.const('hd' as const)]),
+})
+
+/**
+ * 各画质档对应的抓帧倍率（`deviceScaleFactor`）。
+ *
+ * 档位到倍率的唯一一处映射。`hd` 取 2 是「每物理像素一个点」在常见 2× 屏上的解；1× 屏
+ * 上它退化成超采样（帧比屏幕密，缩小后字更匀），所以两档在任何 dpr 下都有可见差别。
+ */
+export const QUALITY_SCALE: Record<BrowserQuality, number> = { perf: 1, hd: 2 }
 
 /** 视图路由应答的 JSON body。 */
 export type PaneResponse =

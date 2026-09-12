@@ -71,7 +71,12 @@ function gatewayFor(overrides = {}) {
   const { gateway, drivers } = gatewayFor({ ownership: ownershipFrom(undefined) })
   const wrapped = gateTool(tool('browser_probe', async () => 'ran'), gateway)
   assert.equal(await wrapped.execute({ a: 'x' }, exec('session-main')), 'ran')
-  assert.deepEqual(drivers, ['session-main'], 'onDriver 必须收到调用方会话 id')
+  assert.deepEqual(
+    drivers,
+    ['session-main', null],
+    'onDriver 先收到调用方会话 id，**放锁时必须再收到 null** —— 不清的话视图会永远显示'
+    + '「智能体正在使用本对话的浏览器，正在排队…」，人以为点什么都没反应',
+  )
 }
 
 // ── 子智能体被拒 ────────────────────────────────────────────────────────────

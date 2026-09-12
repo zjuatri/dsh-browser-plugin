@@ -15,9 +15,21 @@ import { join } from 'node:path'
 import type { Browser, LaunchOptions, Page, Target } from 'puppeteer-core'
 import type { BrowserMode, TabInfo } from './browser-types.js'
 import type { ResolvedConfig } from './config.js'
+import { DEVTOOLS_ALLOWED_ORIGIN } from './devtools.js'
 
 /** 模式切换后把地址带过去的等待上限（毫秒）；超过就让它继续在后台加载。 */
 const CARRY_TIMEOUT_MS = 8000
+
+/**
+ * 放行 DevTools 前端连调试端口的那条启动参数。
+ *
+ * 用它而不是 `--remote-allow-origins=*`：Chrome 只接受不带 Origin 或 origin 在白名单里的
+ * WebSocket 升级，而侧边栏的「右键 → 打开该页面的开发者工具」是靠浏览器去连
+ * `https://chrome-devtools-frontend.appspot.com` 这个前端。`*` 会让用户浏览器里任意网页
+ * 都能连上这个调试端口（端口只绑回环，但网页就跑在同一台机器上），那等于把那只已登录的
+ * Chrome 交出去。
+ */
+const DEVTOOLS_ORIGIN_ARG = `--remote-allow-origins=${DEVTOOLS_ALLOWED_ORIGIN}`
 
 /** 浏览器启动与连接（声明合并到 `BrowserRuntime`）。 */
 export class BrowserRuntime {
@@ -35,12 +47,13 @@ export class BrowserRuntime {
   /** 已解析的插件配置。 */
   protected readonly config: ResolvedConfig
   /**
-   * 实时视图要求的视口尺寸。
+   * 实时视图要求的视口尺寸与抓帧倍率。
    *
-   * 视图接管后页面就按侧边栏的形状渲染，因此这个尺寸必须跨页留存：切换模式或标签
-   * 页会新建页面，新页面得沿用同一个视口，否则画面会在两套比例之间跳一下。
+   * 视图接管后页面就按侧边栏的形状渲染，因此这一组必须跨页留存：切换模式或标签
+   * 页会新建页面，新页面得沿用同一个视口与倍率，否则画面会在两套比例之间跳一下、
+   * 或者新标签页悄悄退回 1 倍（糊回去）。
    */
-  protected viewportOverride: { width: number; height: number } | null = null
+  protected viewportOverride: { width: number; height: number; deviceScaleFactor: number } | null = null
   /** 启动尝试的串行链（见 `ensureBrowser` 的说明）。 */
   private launchChain: Promise<void> = Promise.resolve()
   /** 浏览器世代：切换模式或拆除时递增，用来作废还在启动中的那一次。 */
@@ -91,8 +104,8 @@ export class BrowserRuntime {
     page.setDefaultNavigationTimeout(this.config.navTimeoutMs)
     page.setDefaultTimeout(this.config.scriptTimeoutMs)
     if (resize) {
-      const size = this.viewportOverride ?? this.config.viewport
-      await page.setViewport({ width: size.width, height: size.height })
+      const size = this.viewportOverride ?? { ...this.config.viewport, deviceScaleFactor: 1 }
+      await page.setViewport(size)
     }
   }
 
@@ -130,6 +143,8 @@ export class BrowserRuntime {
       '--disable-background-timer-throttling',
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
+      // 视图上的「右键 → 打开该页面的开发者工具」要能连上调试端口。
+      DEVTOOLS_ORIGIN_ARG,
       `--window-size=${cfg.viewport.width},${cfg.viewport.height}`,
     ]
     // 有界面模式保留 GPU，让可见窗口正常渲染。
@@ -174,6 +189,8 @@ export class BrowserRuntime {
       '--disable-renderer-backgrounding',
       '--disable-backgrounding-occluded-windows',
       '--disable-blink-features=AutomationControlled',
+      // 同 `own` 模式：放行 DevTools 前端连调试端口。
+      DEVTOOLS_ORIGIN_ARG,
       `--window-size=${cfg.viewport.width},${cfg.viewport.height}`,
       '--remote-debugging-port=0',
       `--user-data-dir=${profileDir}`,

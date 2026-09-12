@@ -294,7 +294,12 @@ function emit(modules) {
         .join(', ')
       lines.push(`      const { ${bindings} } = ${target}`)
     }
-    lines.push(row.body.trimEnd().split('\n').map(line => (line === '' ? '' : `    ${line}`)).join('\n'))
+    // Node 的 stripTypeScriptTypes 会以空格替代被删掉的类型；逐行去尾空格，
+    // 避免占位空格污染提交的客户端构建产物。
+    lines.push(row.body.trimEnd().split('\n').map(line => {
+      const content = line.trimEnd()
+      return content === '' ? '' : `    ${content}`
+    }).join('\n'))
     const exported = moduleFaces(row.body, row.imports)
       .map(name => `        ${name},`)
       .join('\n')

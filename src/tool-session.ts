@@ -92,7 +92,13 @@ export function gateTool<T extends Executable>(definition: T, gateway: BrowserGa
       const gate = gateway.gateFor(agentId ?? null)
       return gate.queue.run(definition.name, exec.signal, async () => {
         gate.onDriver(agentId ?? null)
-        return definition.execute(args, exec)
+        try {
+          return await definition.execute(args, exec)
+        } finally {
+          // 放锁时把「谁在驱动」清掉。不清的话视图会永远显示「智能体正在使用本对话的
+          // 浏览器，正在排队…」—— 工具其实早就跑完了，人却以为点什么都没反应。
+          gate.onDriver(null)
+        }
       })
     },
   }
