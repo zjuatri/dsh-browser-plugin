@@ -62,7 +62,6 @@ export function BrowserLive(props: BrowserLiveProps): ReactNode {
   const { t, frame, state, sessionId, toolbar, onOpen, viewRef } = props
   const imgRef = useRef<HTMLImageElement | null>(null)
   const heldRef = useRef<HeldKeys>(new Map())
-  const addrFocusRef = useRef(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   /** 右键菜单位置（相对面板可用区域左上角）；null = 没开。 */
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
@@ -145,9 +144,36 @@ export function BrowserLive(props: BrowserLiveProps): ReactNode {
     heldRef.current.clear()
   }
 
-  /** 地址栏获得焦点时，键应该交给输入框而不是页面。 */
-  const onAddrFocus = (): void => { addrFocusRef.current = true }
-  const onAddrBlur = (): void => { addrFocusRef.current = false }
+  /** 地址栏：把宿主的地址同步进去，但**绝不重建**这个输入框（原因见下面的 effect）。 */
+  const addrRef = useRef<HTMLInputElement | null>(null)
+  /** 上一次同步进地址栏的地址，用来判断「用户是不是改过它」。 */
+  const syncedUrl = useRef(state.url)
+
+  /**
+   * 把当前地址同步进地址栏。
+   *
+   * 关键在**不重建 input**：以前这里给输入框挂了 `key={state.url}`，而 `state.url` 每一帧
+   * 都会更新 —— 镜像页面的地址一变（重定向、锚点、路由跳转、初始 `about:blank` → 真地址、
+   * 宿主每 400ms 的地址同步），React 就重建这个输入框，**正在敲的内容被清空**；这时回车提交
+   * 的是空值，`onSubmit` 里 `if (!url) return` 直接返回，看起来就是「在网址栏敲回车没用」。
+   *
+   * 用户在编辑、且内容与上次同步的地址不同时，宁可让地址栏暂时旧一点，也不覆盖他正在敲的。
+   */
+  useEffect(() => {
+    const input = addrRef.current
+    if (input === null) return
+    const previous = syncedUrl.current
+    syncedUrl.current = state.url
+    const dirty = input.value !== previous
+    if (dirty && document.activeElement === input) return
+    if (input.value !== state.url) input.value = state.url
+  }, [state.url])
+
+  /** 失焦时把「没被改过」的地址栏刷新成最新地址（改过的保留：用户可能正要重新提交）。 */
+  const onAddrBlur = (): void => {
+    const input = addrRef.current
+    if (input !== null && input.value === syncedUrl.current) input.value = state.url
+  }
 
   const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
     event.preventDefault()
@@ -236,14 +262,13 @@ export function BrowserLive(props: BrowserLiveProps): ReactNode {
       }, h(ReloadGlyph, null)),
       h('form', { className: 'dsh-browser-bar', style: { flex: '1 1 auto', padding: 0, border: 0 }, onSubmit },
         h('input', {
+          ref: addrRef,
           name: 'address',
           className: 'dsh-browser-addr',
           defaultValue: state.url,
-          key: state.url,
           placeholder: t('nav.addressPlaceholder'),
           spellCheck: false,
           autoComplete: 'off',
-          onFocus: onAddrFocus,
           onBlur: onAddrBlur,
         }),
         h('button', { type: 'submit', className: 'dsh-browser-btn', 'data-variant': 'primary' }, t('nav.go')))),

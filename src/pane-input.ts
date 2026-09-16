@@ -21,6 +21,120 @@ const MULTI_CLICK_MS = 500
 /** 双击/三击判定的像素容差。 */
 const MULTI_CLICK_PX = 4
 
+/**
+ * DOM `code` → Windows 虚拟键码。
+ *
+ * 为什么必须有这张表：CDP 的 `Input.dispatchKeyEvent` 对**不产生文字**的键（退格、Delete、
+ * 方向键、Home/End、Tab、Esc…）是**靠虚拟键码**判断"这是哪个编辑/移动动作"的。只给
+ * `key`/`code` 时它们**什么都不会发生** —— 实测（真 Chrome，输入框里放 `abcde`）：
+ *
+ * | 发出去的参数 | 结果 |
+ * | --- | --- |
+ * | 只有 `key`/`code` 的 Backspace | 值仍是 `abcde`（没删） |
+ * | 补上 `windowsVirtualKeyCode: 8` | `abcd` ✓ |
+ * | 只有 `key`/`code` 的 Delete | 没删 |
+ * | 补上 `46` | `abd` ✓ |
+ * | 只有 `key`/`code` 的 ArrowRight | 光标停在 0 不动 |
+ * | 补上 `39` | 光标到 1 ✓ |
+ *
+ * 字母/数字/功能键也一并带上：它们本来靠 `text` 就能输入，但键码一致能让页面的快捷键与
+ * `event.keyCode` 分支（不少老站点还在用）看到和真人按键一样的东西。
+ */
+const VK_BY_CODE: Record<string, number> = {
+  Backspace: 8,
+  Tab: 9,
+  Enter: 13,
+  NumpadEnter: 13,
+  Escape: 27,
+  Space: 32,
+  PageUp: 33,
+  PageDown: 34,
+  End: 35,
+  Home: 36,
+  ArrowLeft: 37,
+  ArrowUp: 38,
+  ArrowRight: 39,
+  ArrowDown: 40,
+  Insert: 45,
+  Delete: 46,
+  PrintScreen: 44,
+  Pause: 19,
+  ContextMenu: 93,
+  CapsLock: 20,
+  NumLock: 144,
+  ScrollLock: 145,
+  ShiftLeft: 16,
+  ShiftRight: 16,
+  ControlLeft: 17,
+  ControlRight: 17,
+  AltLeft: 18,
+  AltRight: 18,
+  MetaLeft: 91,
+  MetaRight: 92,
+  NumpadMultiply: 106,
+  NumpadAdd: 107,
+  NumpadSubtract: 109,
+  NumpadDecimal: 110,
+  NumpadDivide: 111,
+  Semicolon: 186,
+  Equal: 187,
+  Comma: 188,
+  Minus: 189,
+  Period: 190,
+  Slash: 191,
+  Backquote: 192,
+  BracketLeft: 219,
+  Backslash: 220,
+  BracketRight: 221,
+  Quote: 222,
+}
+// 字母、数字、功能键按规律补上（写全表只会更难核对）。
+for (let index = 0; index < 26; index++) VK_BY_CODE[`Key${String.fromCharCode(65 + index)}`] = 65 + index
+for (let index = 0; index <= 9; index++) {
+  VK_BY_CODE[`Digit${index}`] = 48 + index
+  VK_BY_CODE[`Numpad${index}`] = 96 + index
+}
+for (let index = 1; index <= 24; index++) VK_BY_CODE[`F${index}`] = 111 + index
+
+/**
+ * 没有 `code` 时的兜底：按 `key` 认。
+ *
+ * 只列"靠它才能工作"的那些 —— 其余键没有虚拟键码也不影响（文字键靠 `text` 输入）。
+ */
+const VK_BY_KEY: Record<string, number> = {
+  Backspace: 8,
+  Tab: 9,
+  Enter: 13,
+  Escape: 27,
+  ' ': 32,
+  PageUp: 33,
+  PageDown: 34,
+  End: 35,
+  Home: 36,
+  ArrowLeft: 37,
+  ArrowUp: 38,
+  ArrowRight: 39,
+  ArrowDown: 40,
+  Insert: 45,
+  Delete: 46,
+}
+
+/**
+ * 这个键对应的 Windows 虚拟键码（认不出来就返回空对象）。
+ *
+ * @param code - DOM `KeyboardEvent.code`（物理键位）。
+ * @param key - DOM `KeyboardEvent.key`（逻辑键值）。
+ * @returns 可直接展开进 CDP 参数的 `windowsVirtualKeyCode`/`nativeVirtualKeyCode`。
+ */
+export function virtualKeyCodes(code: string, key: string): {
+  windowsVirtualKeyCode?: number
+  nativeVirtualKeyCode?: number
+} {
+  const vk = VK_BY_CODE[code] ?? VK_BY_KEY[key]
+  if (vk === undefined) return {}
+  return { windowsVirtualKeyCode: vk, nativeVirtualKeyCode: vk }
+}
+
 /** 上一次点击的记忆，用于双击/三击判定。 */
 interface ClickState {
   button: string
@@ -142,6 +256,8 @@ export async function dispatchInput(
         code: event.code,
         text: event.text === '' ? undefined : event.text,
         modifiers: event.modifiers,
+        // 退格/Delete/方向键这些没有文字的键，全靠它才会真的生效（见 VK_BY_CODE）。
+        ...virtualKeyCodes(event.code, event.key),
       })
       return
     }
@@ -152,6 +268,7 @@ export async function dispatchInput(
         key: event.key,
         code: event.code,
         modifiers: event.modifiers,
+        ...virtualKeyCodes(event.code, event.key),
       })
       return
   }

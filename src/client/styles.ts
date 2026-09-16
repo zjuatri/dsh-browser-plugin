@@ -125,10 +125,14 @@ const CSS = `
  * 画面铺满容器：高度铺满而不是按宽度算 —— 后者在窄栏里会把画面顶到上方、下面留一
  * 大块空白。两个边长都约束住，任何一端先到即停，剩下的极小误差交给 object-fit，
  * 因此永远不会裁掉页面内容。
+ *
+ * 指针用普通箭头（default），不用十字：这是「一面看着页面的窗」，不是取色器或选框，
+ * 十字会让人以为进入了某种拾取模式。真正的指针形状本该由页面自己决定 —— 那只有真内嵌
+ * 页面才做得到，JPEG 流做不到，所以取最少干扰的那一个。
  */
 .dsh-browser-frame{
   display:block;width:100%;height:100%;outline:none;object-fit:contain;
-  cursor:crosshair;background:#fff;
+  cursor:default;background:#fff;
 }
 .dsh-browser-note{
   padding:20px 16px;color:var(--dsw-alias-label-tertiary,#81858c);

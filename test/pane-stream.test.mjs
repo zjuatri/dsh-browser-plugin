@@ -363,4 +363,32 @@ function lastEvent(client, event) {
   stream.dispose()
 }
 
+// ── 编辑键必须带虚拟键码（否则退格/Delete/方向键在页面里毫无反应）──────────
+
+{
+  const page = fakePage('https://a.example/')
+  const stream = new PaneStream(streamingRuntime(page), new BrowserQueue(), 'perf')
+  await stream.startScreencast()
+
+  /** 最后一次发出的按键事件参数。 */
+  const lastKey = () => page.sent.filter(entry => entry.method === 'Input.dispatchKeyEvent').at(-1).params
+
+  await stream.dispatchInput({ type: 'key-down', key: 'Backspace', code: 'Backspace', text: '', modifiers: 0 })
+  assert.equal(
+    lastKey().windowsVirtualKeyCode,
+    8,
+    '退格键必须带 windowsVirtualKeyCode：实测只给 key/code 时输入框纹丝不动，补 8 才真删一个字',
+  )
+  await stream.dispatchInput({ type: 'key-down', key: 'Delete', code: 'Delete', text: '', modifiers: 0 })
+  assert.equal(lastKey().windowsVirtualKeyCode, 46, 'Delete 同理')
+  await stream.dispatchInput({ type: 'key-down', key: 'ArrowRight', code: 'ArrowRight', text: '', modifiers: 0 })
+  assert.equal(lastKey().windowsVirtualKeyCode, 39, '方向键同理：没有键码光标不动')
+  await stream.dispatchInput({ type: 'key-down', key: 'a', code: 'KeyA', text: 'a', modifiers: 0 })
+  assert.equal(lastKey().windowsVirtualKeyCode, 65, '文字键也带上键码，页面里的 event.keyCode 才和真人一致')
+  await stream.dispatchInput({ type: 'key-up', key: 'a', code: 'KeyA', modifiers: 0 })
+  assert.equal(lastKey().windowsVirtualKeyCode, 65, 'keyUp 也要带，否则页面看到的键码不成对')
+
+  stream.dispose()
+}
+
 process.stdout.write('pane-stream: 全部通过\n')
